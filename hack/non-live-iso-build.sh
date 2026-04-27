@@ -69,7 +69,7 @@ sudo podman run \
     -v "$config":/config.toml:ro \
     -v /var/lib/containers/storage:/var/lib/containers/storage \
     quay.io/centos-bootc/bootc-image-builder:latest \
-    --type iso \
+    --type anaconda-iso \
     --rootfs=btrfs \
     --config /config.toml \
     "$image_ref"
