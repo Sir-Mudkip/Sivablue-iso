@@ -1,0 +1,17 @@
+# Build artifacts
+.build/
+output/
+*.iso
+*.iso-CHECKSUM
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Pre-commit
+.pre-commit-config.yaml.backup
