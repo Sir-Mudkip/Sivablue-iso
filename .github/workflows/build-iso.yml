@@ -172,7 +172,7 @@ jobs:
             -v "$PWD/bib-work:/output" \
             -v "$PWD/$CONFIG:/config.toml:ro" \
             quay.io/centos-bootc/bootc-image-builder:latest \
-            --type iso \
+            --type anaconda-iso \
             --rootfs=btrfs \
             --config /config.toml \
             "$IMAGE_REF"
