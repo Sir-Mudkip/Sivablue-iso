@@ -60,6 +60,13 @@ jobs:
             echo "iso_basename=${image_name}-${IMAGE_TAG}-x86_64"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build live ISO (Titanoboa)
         id: build
         uses: ublue-os/titanoboa@main
