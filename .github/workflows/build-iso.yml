@@ -18,15 +18,13 @@ name: Build Sivablue ISOs
       - ".github/workflows/build-iso.yml"
       - "iso_files/configure_iso_anaconda.sh"
       - "iso_files/flatpaks.list"
-      - "iso_files/installer.toml"
-      - "iso_files/installer-nvidia.toml"
 
-# Per-flavor R2 bucket routing happens entirely via GitHub Secrets:
-#   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY  (shared)
-#   R2_BUCKET_BASE     -> bucket for sivablue (base) ISOs
-#   R2_BUCKET_NVIDIA   -> bucket for sivablue-nvidia ISOs
-# Both live (.iso) and autoinstaller (-installer.iso) for a given flavor land
-# in the same bucket; the filename suffix tells them apart.
+# CI builds and ships only the *live* ISOs (base + nvidia), into a single R2
+# bucket. The autoinstaller flow is preserved as a local convenience via
+# hack/non-live-iso-build.sh but is not built or uploaded in CI.
+#
+# Required GitHub secrets:
+#   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 
 jobs:
   build-live:
@@ -40,9 +38,6 @@ jobs:
       fail-fast: false
       matrix:
         flavor: [base, nvidia]
-    env:
-      R2_BUCKET_BASE: ${{ secrets.R2_BUCKET_BASE }}
-      R2_BUCKET_NVIDIA: ${{ secrets.R2_BUCKET_NVIDIA }}
 
     steps:
       - name: Checkout
@@ -56,14 +51,13 @@ jobs:
         run: |
           set -eoux pipefail
           case "$FLAVOR" in
-            base)   image_name="sivablue";        bucket="$R2_BUCKET_BASE"   ;;
-            nvidia) image_name="sivablue-nvidia"; bucket="$R2_BUCKET_NVIDIA" ;;
+            base)   image_name="sivablue" ;;
+            nvidia) image_name="sivablue-nvidia" ;;
           esac
           {
             echo "image_ref=ghcr.io/sir-mudkip/${image_name}"
             echo "image_tag=${IMAGE_TAG}"
             echo "iso_basename=${image_name}-${IMAGE_TAG}-x86_64"
-            echo "bucket=${bucket}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build live ISO (Titanoboa)
@@ -108,108 +102,6 @@ jobs:
           RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           RCLONE_CONFIG_R2_REGION: auto
-          BUCKET: ${{ steps.ref.outputs.bucket }}
-          SOURCE_DIR: ${{ steps.rename.outputs.output_dir }}
-        run: rclone copy --log-level INFO --checksum "$SOURCE_DIR" "R2:$BUCKET"
-
-  build-installer:
-    name: Autoinstaller ISO (${{ matrix.flavor }})
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: read
-    strategy:
-      fail-fast: false
-      matrix:
-        flavor: [base, nvidia]
-    env:
-      R2_BUCKET_BASE: ${{ secrets.R2_BUCKET_BASE }}
-      R2_BUCKET_NVIDIA: ${{ secrets.R2_BUCKET_NVIDIA }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve refs
-        id: ref
-        env:
-          FLAVOR: ${{ matrix.flavor }}
-          IMAGE_TAG: ${{ inputs.image_tag || 'stable' }}
-        run: |
-          set -eoux pipefail
-          case "$FLAVOR" in
-            base)
-              image_name="sivablue"
-              config="iso_files/installer.toml"
-              bucket="$R2_BUCKET_BASE"
-              ;;
-            nvidia)
-              image_name="sivablue-nvidia"
-              config="iso_files/installer-nvidia.toml"
-              bucket="$R2_BUCKET_NVIDIA"
-              ;;
-          esac
-          {
-            echo "image_ref=ghcr.io/sir-mudkip/${image_name}:${IMAGE_TAG}"
-            echo "iso_basename=${image_name}-${IMAGE_TAG}-x86_64-installer"
-            echo "config=${config}"
-            echo "bucket=${bucket}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build autoinstaller ISO (bootc-image-builder)
-        env:
-          IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
-          CONFIG: ${{ steps.ref.outputs.config }}
-        run: |
-          set -eoux pipefail
-          mkdir -p output bib-work
-          sudo podman run \
-            --rm \
-            --privileged \
-            --pull=newer \
-            --security-opt label=type:unconfined_t \
-            --net=host \
-            -v "$PWD/bib-work:/output" \
-            -v "$PWD/$CONFIG:/config.toml:ro" \
-            quay.io/centos-bootc/bootc-image-builder:latest \
-            --type anaconda-iso \
-            --rootfs=btrfs \
-            --config /config.toml \
-            "$IMAGE_REF"
-          [[ -f bib-work/bootiso/install.iso ]]
-
-      - name: Rename + checksum
-        id: rename
-        env:
-          ISO_BASENAME: ${{ steps.ref.outputs.iso_basename }}
-        run: |
-          set -eoux pipefail
-          OUTPUT_DIR="$(realpath output)"
-          sudo mv bib-work/bootiso/install.iso "$OUTPUT_DIR/${ISO_BASENAME}.iso"
-          sudo chown "$(id -u):$(id -g)" "$OUTPUT_DIR/${ISO_BASENAME}.iso"
-          (cd "$OUTPUT_DIR" && sha256sum "${ISO_BASENAME}.iso" | tee "${ISO_BASENAME}.iso-CHECKSUM")
-          echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Upload job artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.ref.outputs.iso_basename }}
-          if-no-files-found: error
-          path: ${{ steps.rename.outputs.output_dir }}
-
-      - name: Install rclone
-        if: github.event_name != 'pull_request' && (inputs.upload_r2 || github.event_name == 'schedule')
-        run: curl -fsSL https://rclone.org/install.sh | sudo bash
-
-      - name: Upload to Cloudflare R2
-        if: github.event_name != 'pull_request' && (inputs.upload_r2 || github.event_name == 'schedule')
-        env:
-          RCLONE_CONFIG_R2_TYPE: s3
-          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
-          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-          RCLONE_CONFIG_R2_REGION: auto
-          BUCKET: ${{ steps.ref.outputs.bucket }}
+          BUCKET: ${{ secrets.R2_BUCKET }}
           SOURCE_DIR: ${{ steps.rename.outputs.output_dir }}
         run: rclone copy --log-level INFO --checksum "$SOURCE_DIR" "R2:$BUCKET"
