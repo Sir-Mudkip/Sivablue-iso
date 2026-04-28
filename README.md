@@ -23,7 +23,6 @@ You can download the live ISOs from my blog page:
 ## Repository layout
 
 ```bash
-.
 hack                                
 ├── local-iso-build.sh         # Local Live ISO builder
 └── non-live-iso-build.sh      # Local Anaconda-iso builder
@@ -32,17 +31,6 @@ iso_files
 ├── flatpaks.list               # Flatpaks available for live ISO session
 ├── installer-nvidia.toml       # Toml config for Nvidia Anaconda-iso
 └── installer.toml              # Toml config for Base Anaconda-iso
-
-    hack
-   │  local-iso-build.sh
-   └  non-live-iso-build.sh
-    iso_files
-   │  configure_iso_anaconda.sh
-   │ * flatpaks.list
-   │  installer-nvidia.toml
-   └  installer.toml
-
-
 ```
                                   
 ## Local builds                                                                                 
