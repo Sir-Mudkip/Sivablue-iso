@@ -75,15 +75,24 @@ cp "$FLATPAKS" "$BUILD_DIR/flatpaks.list"
 cd "$BUILD_DIR"
 
 echo "Running Titanoboa build (this takes 20-40 min and pulls a multi-GB image)..."
+# Titanoboa's `build` recipe ends with `mv ./output.iso {{justfile_dir()}} &>/dev/null`,
+# which fails (the ISO is already at justfile_dir) and makes just exit non-zero. The
+# ISO itself is fine — gate success on the file existing, not on just's exit code.
+set +e
 sudo \
     TITANOBOA_BUILDER_DISTRO=fedora \
     HOOK_post_rootfs=hook.sh \
     just build "$IMAGE_REF" 1 flatpaks.list
+just_rc=$?
+set -e
 
 ISO_PATH="$BUILD_DIR/output.iso"
 if [[ ! -f "$ISO_PATH" ]]; then
-    echo "Build finished but $ISO_PATH not found." >&2
+    echo "Build failed (just exit=$just_rc, no $ISO_PATH produced)." >&2
     exit 1
+fi
+if (( just_rc != 0 )); then
+    echo "Note: just exited $just_rc but ISO was produced — continuing."
 fi
 
 mkdir -p "$OUTPUT_DIR"
