@@ -2,7 +2,6 @@
 
 [customizations.installer.kickstart]
 contents = """
-network --hostname=sivablue
 
 %post
 bootc switch --mutate-in-place --transport registry ghcr.io/sir-mudkip/sivablue-nvidia:stable
@@ -17,8 +16,8 @@ enable = [
   "org.fedoraproject.Anaconda.Modules.Security",
   "org.fedoraproject.Anaconda.Modules.Services",
   "org.fedoraproject.Anaconda.Modules.Timezone",
-  "org.fedoraproject.Anaconda.Modules.Users",
 ]
 disable = [
   "org.fedoraproject.Anaconda.Modules.Subscription",
+  "org.fedoraproject.Anaconda.Modules.Users",
 ]
