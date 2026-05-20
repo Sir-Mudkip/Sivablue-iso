@@ -13,9 +13,11 @@ Both kinds install the same bootc image (`ghcr.io/sir-mudkip/sivablue{,-nvidia}:
 
 The slight benefit of the live-iso is that many of the flatpaks are installed for your first boot. The install process between the live and anaconda ISOs is identical, except the live version will give you a gnome session to look around if so desired and a number of pre-installed flatpaks. The anaconda-iso version will install install all flatpaks on an initial boot, provided there is an internet connection.
 
-You can download the live ISOs from my blog page:
-- PLACEHOLDER
-- PLACEHOLDER
+You can download the live ISOs from below:
+- [Standard Image](https://download.sivablue.uk/sivablue-stable-x86_64.iso)
+- [Standard Image Checksum](https://download.sivablue.uk/sivablue-stable-x86_64.iso-CHECKSUM)
+- [Nvidia Image](https://download.sivablue.uk/sivablue-nvidia-stable-x86_64.iso)
+- [Nvidia Image Checksum](https://download.sivablue.uk/sivablue-nvidia-stable-x86_64.iso-CHECKSUM)
 
 > [!NOTE]
 > The anaconda-iso ISOs are *not* built in CI — they remain available as a local-only convenience via `hack/non-live-iso-build.sh`.
@@ -46,9 +48,9 @@ Both scripts produce `output/<image>-<tag>-x86_64{,-installer}.iso` plus a SHA25
 ./hack/non-live-iso-build.sh nvidia # Anaconda-iso, nvidia flavor
 ```
 
-Requirements: `podman`, `just` (for Titanoboa), `git`, `sudo`, and a bit of space on your computer. On an immutable host (Bluefin/Bazzite/etc), run from a [distrobox container](https://distrobox.it/).
+Requirements: `podman`, `just` (for Titanoboa), `git`, `sudo`, and a bit of space on your computer.
 
-Boot-test in whatever VM flavour you so want as this is just an ISO file. Assign about 60GB to get "everything" from the install instructions.
+Boot-test in whatever VM software you have since it's just an ISO file. Assign about 60GB to get "everything" including Kali and Metasploit.
 
 ## CI builds
 
