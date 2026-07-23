@@ -61,7 +61,8 @@ fi
 
 # --- ostree needs scratch space during install; the live / is a small tmpfs overlay,
 #     so mount a larger tmpfs at /var/tmp. (%% escapes to a literal % in the unit.)
-rm -rf /var/tmp
+# Don't clear /var/tmp here: the Containerfile keeps a build cache mounted at
+# /var/tmp/libdnf5, and the tmpfs below covers /var/tmp at runtime anyway.
 mkdir -p /var/tmp
 cat >/etc/systemd/system/var-tmp.mount <<'EOF'
 [Unit]
