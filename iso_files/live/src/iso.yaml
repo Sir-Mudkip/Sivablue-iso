@@ -1,0 +1,14 @@
+# ISO config required by the container-native ISO contract v0.1.0. build.sh renders
+# @ISO_LABEL@ before copying this to /usr/lib/bootc-image-builder/iso.yaml. The
+# root=live:CDLABEL value MUST match `label` or the live medium will not be found.
+label: "@ISO_LABEL@"
+grub2:
+  timeout: 10
+  default: 0
+  entries:
+    - name: "Sivablue Live"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=@ISO_LABEL@ enforcing=0 rd.live.image"
+      initrd: "/images/pxeboot/initrd.img"
+    - name: "Sivablue Live (Basic graphics)"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=@ISO_LABEL@ enforcing=0 rd.live.image nomodeset"
+      initrd: "/images/pxeboot/initrd.img"

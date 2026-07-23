@@ -16,8 +16,7 @@ name: Build Sivablue ISOs
   pull_request:
     paths:
       - ".github/workflows/build-iso.yml"
-      - "iso_files/configure_iso_anaconda.sh"
-      - "iso_files/flatpaks.list"
+      - "iso_files/live/**"
 
 # CI builds and ships only the *live* ISOs (base + nvidia), into a single R2
 # bucket. The autoinstaller flow is preserved as a local convenience via
@@ -57,13 +56,14 @@ jobs:
         run: |
           set -eoux pipefail
           case "$FLAVOR" in
-            base)   image_name="sivablue" ;;
-            nvidia) image_name="sivablue-nvidia" ;;
+            base)   image_name="sivablue";        iso_label="Sivablue-Live" ;;
+            nvidia) image_name="sivablue-nvidia"; iso_label="Sivablue-Nvidia-Live" ;;
           esac
           {
             echo "image_ref=ghcr.io/sir-mudkip/${image_name}"
             echo "image_tag=${IMAGE_TAG}"
             echo "iso_basename=${image_name}-${IMAGE_TAG}-x86_64"
+            echo "iso_label=${iso_label}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
@@ -73,14 +73,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The new Titanoboa contract takes only image-ref and embeds ALL customization in the
+      # image, so we bake the live/installer environment into a derived image first. Built with
+      # `sudo podman` so it lands in root's store, where Titanoboa's `--mount type=image` reads it.
+      - name: Build derived live image
+        id: live
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
+          IMAGE_TAG: ${{ steps.ref.outputs.image_tag }}
+          ISO_LABEL: ${{ steps.ref.outputs.iso_label }}
+          FLAVOR: ${{ matrix.flavor }}
+        run: |
+          set -eoux pipefail
+          live_image="localhost/sivablue-live-${FLAVOR}:${IMAGE_TAG}"
+          sudo podman build \
+            --cap-add sys_admin --security-opt label=disable --squash \
+            --build-arg BASE_IMAGE="${IMAGE_REF}:${IMAGE_TAG}" \
+            --build-arg IMAGE_REF="${IMAGE_REF}" \
+            --build-arg IMAGE_TAG="${IMAGE_TAG}" \
+            --build-arg ISO_LABEL="${ISO_LABEL}" \
+            --build-arg FLAVOR="${FLAVOR}" \
+            -t "${live_image}" \
+            "${GITHUB_WORKSPACE}/iso_files/live"
+          echo "live_image=${live_image}" >> "$GITHUB_OUTPUT"
+
       - name: Build live ISO (Titanoboa)
         id: build
         uses: ublue-os/titanoboa@main
         with:
-          image-ref: ${{ steps.ref.outputs.image_ref }}:${{ steps.ref.outputs.image_tag }}
-          flatpaks-list: ${{ github.workspace }}/iso_files/flatpaks.list
-          hook-post-rootfs: ${{ github.workspace }}/iso_files/configure_iso_anaconda.sh
-          builder-distro: fedora
+          image-ref: ${{ steps.live.outputs.live_image }}
 
       - name: Rename + checksum
         id: rename

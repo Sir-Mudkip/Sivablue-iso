@@ -1,0 +1,26 @@
+# Derived "live" image consumed by the new Titanoboa contract (image-ref only).
+# All live-ISO customization must live inside the image, so build.sh bakes in the
+# GNOME live session, a dmsquash-live initramfs, the embedded install image, and
+# the Anaconda installer + kickstart.
+#
+# Must be built privileged (flatpak/dracut/nested podman pull all need it):
+#   sudo podman build --cap-add sys_admin --security-opt label=disable --squash \
+#     --build-arg BASE_IMAGE=ghcr.io/sir-mudkip/sivablue:stable \
+#     --build-arg IMAGE_REF=ghcr.io/sir-mudkip/sivablue \
+#     --build-arg IMAGE_TAG=stable --build-arg ISO_LABEL=Sivablue-Live \
+#     --build-arg FLAVOR=base -t localhost/sivablue-live-base:stable iso_files/live
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG IMAGE_REF
+ARG IMAGE_TAG=stable
+ARG ISO_LABEL=Sivablue-Live
+ARG FLAVOR=base
+ENV IMAGE_REF=${IMAGE_REF} \
+    IMAGE_TAG=${IMAGE_TAG} \
+    ISO_LABEL=${ISO_LABEL} \
+    FLAVOR=${FLAVOR}
+
+COPY ./src /src
+RUN --mount=type=cache,target=/var/tmp/libdnf5,id=libdnf5 /src/build.sh
+RUN rm -rf /src

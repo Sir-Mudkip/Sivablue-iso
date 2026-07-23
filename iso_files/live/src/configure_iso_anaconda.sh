@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# Post-rootfs hook for Titanoboa: turns Sivablue's bootc rootfs into a
-# Live-bootable installer environment (GNOME live session + Anaconda Live).
+# Baked into the derived "live" image by build.sh: turns Sivablue's bootc rootfs
+# into a Live-bootable installer environment (GNOME live session + Anaconda Live).
+# The Containerfile guarantees IMAGE_REF / IMAGE_TAG in the environment.
 
 set -eoux pipefail
 
-# Titanoboa exports IMAGE_REF / IMAGE_TAG. Fall back to image-info.json if present.
-if [[ -z "${IMAGE_REF:-}" || -z "${IMAGE_TAG:-}" ]]; then
-    if [[ -f /usr/share/ublue-os/image-info.json ]]; then
-        IMAGE_INFO="$(cat /usr/share/ublue-os/image-info.json)"
-        IMAGE_TAG="$(jq -c -r '."image-tag"' <<<"$IMAGE_INFO")"
-        IMAGE_REF="$(jq -c -r '."image-ref"' <<<"$IMAGE_INFO")"
-    fi
-fi
+: "${IMAGE_REF:?IMAGE_REF must be set by the Containerfile}"
+: "${IMAGE_TAG:?IMAGE_TAG must be set by the Containerfile}"
 IMAGE_REF="${IMAGE_REF##*://}"
 
 safe_disable() {

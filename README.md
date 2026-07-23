@@ -29,11 +29,19 @@ hack
 ├── local-iso-build.sh         # Local Live ISO builder
 └── non-live-iso-build.sh      # Local Anaconda-iso builder
 iso_files
-├── configure_iso_anaconda.sh   # Live ISO Config for CI
-├── flatpaks.list               # Flatpaks available for live ISO session
+├── live                        # Derived "live" image, then fed to Titanoboa
+│   ├── Containerfile           #   built FROM the Sivablue bootc image
+│   └── src
+│       ├── build.sh            #   bakes in live session, live initramfs, installer
+│       ├── configure_iso_anaconda.sh  # Anaconda Live + interactive kickstart
+│       ├── flatpaks            #   flatpaks baked into the live session
+│       └── iso.yaml            #   required ISO label + GRUB entries
 ├── installer-nvidia.toml       # Toml config for Nvidia Anaconda-iso
 └── installer.toml              # Toml config for Base Anaconda-iso
 ```
+
+> [!NOTE]
+> Since Titanoboa moved to the [container-native ISO contract](https://github.com/ondrejbudai/bootc-isos), it only takes an `image-ref` and embeds no customization of its own. So `iso_files/live/` builds a derived image that bakes in the live session, a `dmsquash-live` initramfs, and the Anaconda installer, and *that* image is what Titanoboa turns into an ISO. See `iso_files/live/README.md`.
                                   
 ## Local builds                                                                                 
 
@@ -48,7 +56,7 @@ Both scripts produce `output/<image>-<tag>-x86_64{,-installer}.iso` plus a SHA25
 ./hack/non-live-iso-build.sh nvidia # Anaconda-iso, nvidia flavor
 ```
 
-Requirements: `podman`, `just` (for Titanoboa), `git`, `sudo`, and a bit of space on your computer.
+Requirements: `podman`, `git`, `sudo`, and a bit of space on your computer.
 
 Boot-test in whatever VM software you have since it's just an ISO file. Assign about 60GB to get "everything" including Kali and Metasploit.
 

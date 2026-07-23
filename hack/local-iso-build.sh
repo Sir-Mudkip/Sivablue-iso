@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build a Sivablue live-bootable ISO locally via Titanoboa.
-# Mirrors what .github/workflows/build-iso.yml does in CI, so output should be
-# bit-similar between local and CI builds.
+# Build a Sivablue live-bootable ISO locally, mirroring .github/workflows/build-iso.yml.
+# Under the container-native Titanoboa contract this is two steps: build the derived
+# "live" image (iso_files/live), then run Titanoboa against that local image.
 #
 # Usage: hack/local-iso-build.sh [flavor] [tag]
 #   flavor: base (default) | nvidia
 #   tag:    bootc image tag (default: stable)
 #
-# Requires: podman, just, sudo, ~20 GB free disk in this checkout.
+# Requires: podman, git, sudo, ~40 GB free disk in this checkout.
 
 set -euo pipefail
 
@@ -17,24 +17,23 @@ flavor="${1:-base}"
 tag="${2:-stable}"
 
 case "$flavor" in
-    base)   image_name="sivablue" ;;
-    nvidia) image_name="sivablue-nvidia" ;;
+    base)   image_name="sivablue";        iso_label="Sivablue-Live" ;;
+    nvidia) image_name="sivablue-nvidia"; iso_label="Sivablue-Nvidia-Live" ;;
     *)
         echo "Unknown flavor '$flavor'. Use: base | nvidia" >&2
         exit 1
         ;;
 esac
 
-IMAGE_REF="ghcr.io/sir-mudkip/${image_name}:${tag}"
-HOOK="$REPO_ROOT/iso_files/configure_iso_anaconda.sh"
-FLATPAKS="$REPO_ROOT/iso_files/flatpaks.list"
+IMAGE_REF="ghcr.io/sir-mudkip/${image_name}"
+LIVE_IMAGE="localhost/sivablue-live-${flavor}:${tag}"
+LIVE_DIR="$REPO_ROOT/iso_files/live"
 BUILD_DIR="$REPO_ROOT/.build/${flavor}"
 OUTPUT_DIR="$REPO_ROOT/output"
 OUTPUT_NAME="${image_name}-${tag}-x86_64.iso"
 OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_NAME"
 
-[[ -f "$HOOK" ]]     || { echo "Hook script missing: $HOOK" >&2; exit 1; }
-[[ -f "$FLATPAKS" ]] || { echo "Flatpak list missing: $FLATPAKS" >&2; exit 1; }
+[[ -f "$LIVE_DIR/Containerfile" ]] || { echo "Missing $LIVE_DIR/Containerfile" >&2; exit 1; }
 
 cat <<EOF
 
@@ -42,68 +41,63 @@ cat <<EOF
   Sivablue ISO build (local, via Titanoboa)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Flavor:        $flavor
-  Image ref:     $IMAGE_REF
-  Hook:          $HOOK
-  Flatpaks:      $FLATPAKS
-  Build dir:     $BUILD_DIR
+  Base image:    $IMAGE_REF:$tag
+  Live image:    $LIVE_IMAGE
+  ISO label:     $iso_label
   Output:        $OUTPUT_PATH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
 
-# Wipe any previous build (Titanoboa leaves root-owned files behind).
+# --- 1. Build the derived live image (identical to CI). Privileged: flatpak/dracut and
+#        the nested `podman pull` inside the build all require it. sudo so the image lands
+#        in root's store, where Titanoboa's `--mount type=image` looks for it.
+echo "Building derived live image ${LIVE_IMAGE}..."
+sudo podman build \
+    --cap-add sys_admin --security-opt label=disable --squash \
+    --build-arg BASE_IMAGE="${IMAGE_REF}:${tag}" \
+    --build-arg IMAGE_REF="${IMAGE_REF}" \
+    --build-arg IMAGE_TAG="${tag}" \
+    --build-arg ISO_LABEL="${iso_label}" \
+    --build-arg FLAVOR="${flavor}" \
+    -t "${LIVE_IMAGE}" \
+    "${LIVE_DIR}"
+
+# --- 2. Run Titanoboa against the local image.
 if [[ -d "$BUILD_DIR" ]]; then
-    echo "Cleaning previous build dir..."
+    echo "Cleaning previous Titanoboa checkout..."
     sudo rm -rf "$BUILD_DIR"
 fi
-
 echo "Cloning Titanoboa..."
-git clone --depth=1 https://github.com/hanthor/titanoboa "$BUILD_DIR"
+git clone --depth=1 https://github.com/ublue-os/titanoboa "$BUILD_DIR"
 
-# Same patches the previous Bluefin script applied — keep them; without these
-# Titanoboa fails on Fedora hosts due to setfiles/SELinux and missing /dev/fuse
-# in the builder container.
-echo "Patching Titanoboa Justfile..."
-sed -i \
-    -e 's|setfiles -F -r . /etc/selinux/targeted/contexts/files/file_contexts \.|& \|\| true|' \
-    -e 's|--security-opt label=disable|--security-opt label=disable --device /dev/fuse|' \
-    "$BUILD_DIR/Justfile"
-
-cp "$HOOK"     "$BUILD_DIR/hook.sh"
-cp "$FLATPAKS" "$BUILD_DIR/flatpaks.list"
-
-cd "$BUILD_DIR"
-
-echo "Running Titanoboa build (this takes 20-40 min and pulls a multi-GB image)..."
-# Titanoboa's `build` recipe ends with `mv ./output.iso {{justfile_dir()}} &>/dev/null`,
-# which fails (the ISO is already at justfile_dir) and makes just exit non-zero. The
-# ISO itself is fine — gate success on the file existing, not on just's exit code.
-set +e
-sudo \
-    TITANOBOA_BUILDER_DISTRO=fedora \
-    HOOK_post_rootfs=hook.sh \
-    just build "$IMAGE_REF" 1 flatpaks.list
-just_rc=$?
-set -e
-
-ISO_PATH="$BUILD_DIR/output.iso"
-if [[ ! -f "$ISO_PATH" ]]; then
-    echo "Build failed (just exit=$just_rc, no $ISO_PATH produced)." >&2
-    exit 1
-fi
-if (( just_rc != 0 )); then
-    echo "Note: just exited $just_rc but ISO was produced — continuing."
-fi
+# On Fedora hosts the builder container needs /dev/fuse; the upstream run line does not
+# add it. Inject it (harmless if the host does not need it).
+sed -i 's|--security-opt label=disable|--security-opt label=disable --device /dev/fuse|' \
+    "$BUILD_DIR/main.sh"
 
 mkdir -p "$OUTPUT_DIR"
-sudo mv "$ISO_PATH" "$OUTPUT_PATH"
+echo "Running Titanoboa build (this takes 20-40 min)..."
+# main.sh prints the built ISO path on stdout; all its logging goes to stderr.
+ISO_SRC="$(
+    sudo env \
+        TITANOBOA_CTR_IMAGE="$LIVE_IMAGE" \
+        TITANOBOA_OUTPUT_DIR="$BUILD_DIR/output" \
+        bash "$BUILD_DIR/main.sh"
+)"
+
+if [[ ! -f "$ISO_SRC" ]]; then
+    echo "Build failed: no ISO produced at '$ISO_SRC'." >&2
+    exit 1
+fi
+
+sudo mv "$ISO_SRC" "$OUTPUT_PATH"
 sudo chown "$(id -u):$(id -g)" "$OUTPUT_PATH"
 ( cd "$OUTPUT_DIR" && sha256sum "$OUTPUT_NAME" | tee "${OUTPUT_NAME}-CHECKSUM" )
 
-# Free the ~40 GB of intermediate squashfs/rootfs scratch that Titanoboa leaves behind.
-# Keeps .build/<flavor>/ but only the cloned Titanoboa source — next run will wipe it anyway.
+# Free the multi-GB squashfs/rootfs scratch Titanoboa leaves behind.
 echo "Cleaning Titanoboa work directory..."
-sudo rm -rf "$BUILD_DIR/work"
+sudo rm -rf "$BUILD_DIR/output"
 
 echo
 echo "✓ ISO ready: $OUTPUT_PATH"
